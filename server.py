@@ -1,6 +1,7 @@
 import json, csv, io, re, hashlib, base64, uuid, time, urllib.parse, os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import x402mw, ipaddress, socket, urllib.request, html as htmlmod
+import aitells
 
 WALLET = "0xdbfdF15Fe0Acad2828Bc98d6c83d6855593fcd77"
 INDEX = """<!doctype html><html><head><meta charset=utf-8><title>delta-1 utility API</title>
@@ -15,6 +16,7 @@ INDEX = """<!doctype html><html><head><meta charset=utf-8><title>delta-1 utility
 <li><code>GET /v1/uuid?n=5</code> — random UUIDv4s</li>
 <li><code>POST /v1/slug</code> — body: text → URL slug</li>
 <li><code>POST /v1/wordcount</code> — body: text → words/chars/lines</li>
+<li><code>POST /v1/aitells</code> — body: text → quick AI-writing-tells score 0–99 (free taste)</li>
 <li><code>GET /v1/time</code> — unix + ISO time</li>
 <li><code>GET /v1/ip</code> — your IP</li>
 </ul>
@@ -23,6 +25,7 @@ INDEX = """<!doctype html><html><head><meta charset=utf-8><title>delta-1 utility
 <ul>
 <li><code>GET /x402/fetch?url=https://...</code> — $0.005 — fetch a public page, return title + readable text (HTML stripped). Handy for agents without a browser.</li>
 <li><code>POST /x402/csv2json</code>, <code>/x402/json2csv</code>, <code>/x402/hash</code>, <code>/x402/wordcount</code> — $0.001 each, no rate limit.</li>
+<li><code>POST /x402/aitells</code> — $0.002 — full AI-writing-tells report: every matched tell with example sentences, style stats (em-dash rate, rule-of-three density, sentence-length uniformity). Deterministic, rules-based, no LLM.</li>
 </ul>
 <p>Canonical host: <code>https://utils.bigfloppy.net</code> (x402 resource URLs use this host)</p>
 <h2>Examples</h2>
@@ -39,6 +42,7 @@ PAID = {
  "/x402/json2csv":("JSON array -> CSV (no rate limit)", 1000, "POST", "json"),
  "/x402/hash":    ("sha256/md5/sha1/sha512 of request body (?algo=)", 1000, "POST", "text"),
  "/x402/wordcount":("words/chars/lines of text body", 1000, "POST", "text"),
+"/x402/aitells":("AI-writing-tells report: score 0-99, matched tells with example sentences, style stats (em-dash rate, rule-of-three, sentence-length uniformity). Rules-based, deterministic, no LLM. Body = text to check.", 2000, "POST", "text"),
 }
 def _public(url):
     h = urllib.parse.urlparse(url).hostname or ""
@@ -95,6 +99,7 @@ class H(BaseHTTPRequestHandler):
                 data = json.loads(raw.decode()); data = [data] if isinstance(data, dict) else data
                 keys = []; [keys.append(k) for r in data for k in r if k not in keys]
                 o = io.StringIO(); w = csv.DictWriter(o, fieldnames=keys); w.writeheader(); w.writerows(data); out = {"csv": o.getvalue()}
+            elif p == "/x402/aitells": out = aitells.analyze(raw.decode("utf-8", "replace"))
             elif p == "/x402/hash":
                 algo = q.get("algo", ["sha256"])[0]; algo = algo if algo in ("md5", "sha1", "sha256", "sha512") else "sha256"
                 out = {"algo": algo, "hex": hashlib.new(algo, raw).hexdigest()}
@@ -149,6 +154,9 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {"algo": algo, "hex": hashlib.new(algo, raw).hexdigest(), "base64": base64.b64encode(hashlib.new(algo, raw).digest()).decode()})
             if p == "/v1/slug":
                 s = re.sub(r"[^a-z0-9]+", "-", raw.decode().lower()).strip("-"); return self._send(200, {"slug": s})
+            if p == "/v1/aitells":
+                out = aitells.analyze(raw.decode("utf-8", "replace"))
+                return self._send(200, {k: out[k] for k in ("score", "verdict", "words", "sentences")})
             if p == "/v1/wordcount":
                 t = raw.decode(); return self._send(200, {"words": len(t.split()), "chars": len(t), "lines": t.count("\n") + (1 if t and not t.endswith("\n") else 0)})
         except Exception as e:
