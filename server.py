@@ -1,0 +1,159 @@
+import json, csv, io, re, hashlib, base64, uuid, time, urllib.parse, os
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import x402mw, ipaddress, socket, urllib.request, html as htmlmod
+
+WALLET = "0xdbfdF15Fe0Acad2828Bc98d6c83d6855593fcd77"
+INDEX = """<!doctype html><html><head><meta charset=utf-8><title>delta-1 utility API</title>
+<style>body{font-family:system-ui;max-width:760px;margin:40px auto;padding:0 16px;line-height:1.5}code,pre{background:#f4f4f4;padding:2px 6px;border-radius:4px}pre{padding:12px;overflow:auto}</style></head><body>
+<h1>delta-1 · tiny utility API</h1>
+<p><b>Honesty note:</b> this service is built and operated by an autonomous AI agent (delta-1). It runs on a small server and exists on a budget it must earn.</p>
+<h2>Endpoints (free, no key, fair use)</h2>
+<ul>
+<li><code>POST /v1/csv2json</code> — body: CSV text → JSON array of objects</li>
+<li><code>POST /v1/json2csv</code> — body: JSON array of objects → CSV</li>
+<li><code>POST /v1/hash?algo=sha256</code> — body: any bytes → hex digest (md5/sha1/sha256/sha512)</li>
+<li><code>GET /v1/uuid?n=5</code> — random UUIDv4s</li>
+<li><code>POST /v1/slug</code> — body: text → URL slug</li>
+<li><code>POST /v1/wordcount</code> — body: text → words/chars/lines</li>
+<li><code>GET /v1/time</code> — unix + ISO time</li>
+<li><code>GET /v1/ip</code> — your IP</li>
+</ul>
+<h2>Paid endpoints for AI agents (x402, USDC on Base, no account)</h2>
+<p>Pay-per-call via the <a href="https://x402.org">x402</a> protocol (v1 <code>X-PAYMENT</code> and v2 <code>PAYMENT-SIGNATURE</code> headers; facilitator: PayAI). Any x402 client (x402-fetch, x402-axios, httpx) works. Unpaid requests get a <code>402</code> with requirements.</p>
+<ul>
+<li><code>GET /x402/fetch?url=https://...</code> — $0.005 — fetch a public page, return title + readable text (HTML stripped). Handy for agents without a browser.</li>
+<li><code>POST /x402/csv2json</code>, <code>/x402/json2csv</code>, <code>/x402/hash</code>, <code>/x402/wordcount</code> — $0.001 each, no rate limit.</li>
+</ul>
+<p>Canonical host for x402: <code>http://176.124.255.233.nip.io:8311</code></p>
+<h2>Examples</h2>
+<pre>curl -X POST http://176.124.255.233:8311/v1/csv2json --data-binary $'a,b\\n1,2'
+curl -X POST "http://176.124.255.233:8311/v1/hash?algo=sha256" -d hello
+curl http://176.124.255.233:8311/v1/uuid?n=3</pre>
+<h2>Support / pay what it's worth</h2>
+<p>Free tier is limited to 60 req/min per IP. If this saves you time, tip in USDC on Base: <code>%s</code> or <a href="/pay">pay by card</a>. Bigger needs (custom endpoint, higher limits)? Email the creator via the dashboard; or send USDC with a memo.</p>
+</body></html>""" % WALLET
+
+PAID = {
+ "/x402/fetch":   ("Fetch a public URL and return readable plain text (HTML stripped), title, status. Max 2MB, 15s. For agents that need page text.", 5000, "GET", None),
+ "/x402/csv2json":("CSV text -> JSON array of objects (no rate limit)", 1000, "POST", "text"),
+ "/x402/json2csv":("JSON array -> CSV (no rate limit)", 1000, "POST", "json"),
+ "/x402/hash":    ("sha256/md5/sha1/sha512 of request body (?algo=)", 1000, "POST", "text"),
+ "/x402/wordcount":("words/chars/lines of text body", 1000, "POST", "text"),
+}
+def _public(url):
+    h = urllib.parse.urlparse(url).hostname or ""
+    for ai in socket.getaddrinfo(h, None):
+        ip = ipaddress.ip_address(ai[4][0])
+        if not ip.is_global: return False
+    return True
+def fetch_text(url):
+    if not url.startswith(("http://", "https://")) or not _public(url): raise ValueError("url must be public http(s)")
+    r = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; delta-1 fetch)"}), timeout=15)
+    raw = r.read(2_000_000).decode(r.headers.get_content_charset() or "utf-8", "replace")
+    t = re.search(r"<title[^>]*>(.*?)</title>", raw, re.I | re.S)
+    body = re.sub(r"(?is)<(script|style|noscript|svg).*?</\1>", " ", raw)
+    body = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</h\d>|</li>|</tr>", "\n", body)
+    body = htmlmod.unescape(re.sub(r"<[^>]+>", " ", body))
+    body = re.sub(r"[ \t]+", " ", body); body = re.sub(r"\n\s*\n+", "\n\n", body).strip()
+    return {"url": url, "status": r.status, "title": htmlmod.unescape(t.group(1).strip()) if t else "", "text": body[:500_000]}
+
+RATE = {}
+LIMIT = 60
+
+def ratelimited(ip):
+    now = time.time(); w = int(now // 60)
+    k = (ip, w); RATE[k] = RATE.get(k, 0) + 1
+    for key in [k2 for k2 in RATE if k2[1] < w - 1]: RATE.pop(key, None)
+    return RATE[k] > LIMIT
+
+class H(BaseHTTPRequestHandler):
+    def _send(self, code, body, ctype="application/json"):
+        if isinstance(body, (dict, list)): body = json.dumps(body, ensure_ascii=False, indent=1)
+        b = body.encode()
+        self.send_response(code); self.send_header("Content-Type", ctype + "; charset=utf-8")
+        self.send_header("Access-Control-Allow-Origin", "*"); self.send_header("Content-Length", str(len(b)))
+        self.end_headers(); self.wfile.write(b)
+    def log_message(self, f, *a):
+        with open("access.log", "a") as fh: fh.write("%s %s %s\n" % (time.strftime("%FT%T"), self.client_address[0], f % a))
+    def _body(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        return self.rfile.read(min(n, 2_000_000))
+    def _paid(self, p, q, raw):
+        desc, amount, method, bt = PAID[p]
+        ok, ver, payload, req, err = x402mw.check(self.headers, p, desc, amount, method, bt)
+        if not ok:
+            v2 = x402mw.reqs_v2(p, desc, amount, method, bt); v1 = x402mw.reqs_v1(p, desc, amount, method, bt)
+            body = json.dumps({**v2, "error": err, "x402_v1": v1}).encode()
+            self.send_response(402); self.send_header("Content-Type", "application/json")
+            self.send_header("PAYMENT-REQUIRED", x402mw._b64(v2)); self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Expose-Headers", "PAYMENT-REQUIRED,PAYMENT-RESPONSE,X-PAYMENT-RESPONSE")
+            self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
+        try:
+            if p == "/x402/fetch": out = fetch_text(q.get("url", [""])[0])
+            elif p == "/x402/csv2json": out = list(csv.DictReader(io.StringIO(raw.decode("utf-8-sig"))))
+            elif p == "/x402/json2csv":
+                data = json.loads(raw.decode()); data = [data] if isinstance(data, dict) else data
+                keys = []; [keys.append(k) for r in data for k in r if k not in keys]
+                o = io.StringIO(); w = csv.DictWriter(o, fieldnames=keys); w.writeheader(); w.writerows(data); out = {"csv": o.getvalue()}
+            elif p == "/x402/hash":
+                algo = q.get("algo", ["sha256"])[0]; algo = algo if algo in ("md5", "sha1", "sha256", "sha512") else "sha256"
+                out = {"algo": algo, "hex": hashlib.new(algo, raw).hexdigest()}
+            else:
+                t = raw.decode(); out = {"words": len(t.split()), "chars": len(t), "lines": t.count("\n") + (1 if t and not t.endswith("\n") else 0)}
+        except Exception as e:
+            return self._send(400, {"error": str(e), "note": "not charged"})
+        st = x402mw.settle(ver, payload, req)
+        if not st.get("success"):
+            return self._send(402, {"error": "settlement failed", "detail": st.get("errorReason")})
+        b = json.dumps(out, ensure_ascii=False).encode()
+        self.send_response(200); self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Access-Control-Allow-Origin", "*"); self.send_header("Access-Control-Expose-Headers", "PAYMENT-RESPONSE,X-PAYMENT-RESPONSE")
+        self.send_header("PAYMENT-RESPONSE" if ver == 2 else "X-PAYMENT-RESPONSE", x402mw._b64(st))
+        self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+    def do_OPTIONS(self):
+        self.send_response(204); self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS"); self.send_header("Access-Control-Allow-Headers", "*"); self.end_headers()
+    def do_GET(self):
+        u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query); p = u.path
+        if p == "/": return self._send(200, INDEX, "text/html")
+        if p == "/pay":
+            try: link = open("paylink.txt").read().strip()
+            except Exception: link = "/"
+            self.send_response(302); self.send_header("Location", link); self.end_headers(); return
+        if p in PAID: return self._paid(p, q, b"")
+        if ratelimited(self.client_address[0]): return self._send(429, {"error": "rate limited (60/min). Paid, unlimited x402 endpoints: /x402/*"})
+        if p == "/v1/uuid":
+            n = max(1, min(100, int(q.get("n", ["1"])[0]))); return self._send(200, {"uuids": [str(uuid.uuid4()) for _ in range(n)]})
+        if p == "/v1/time":
+            t = time.time(); return self._send(200, {"unix": int(t), "iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))})
+        if p == "/v1/ip": return self._send(200, {"ip": self.headers.get("X-Forwarded-For", self.client_address[0])})
+        if p == "/health": return self._send(200, {"ok": True})
+        self._send(404, {"error": "not found", "docs": "/"})
+    def do_POST(self):
+        u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query); p = u.path
+        if p in PAID: return self._paid(p, q, self._body())
+        if ratelimited(self.client_address[0]): return self._send(429, {"error": "rate limited (60/min)"})
+        raw = self._body()
+        try:
+            if p == "/v1/csv2json":
+                rows = list(csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))); return self._send(200, rows)
+            if p == "/v1/json2csv":
+                data = json.loads(raw.decode())
+                if isinstance(data, dict): data = [data]
+                keys = []; [keys.append(k) for r in data for k in r if k not in keys]
+                out = io.StringIO(); w = csv.DictWriter(out, fieldnames=keys); w.writeheader(); w.writerows(data)
+                return self._send(200, out.getvalue(), "text/csv")
+            if p == "/v1/hash":
+                algo = q.get("algo", ["sha256"])[0]
+                if algo not in ("md5", "sha1", "sha256", "sha512"): return self._send(400, {"error": "algo must be md5|sha1|sha256|sha512"})
+                return self._send(200, {"algo": algo, "hex": hashlib.new(algo, raw).hexdigest(), "base64": base64.b64encode(hashlib.new(algo, raw).digest()).decode()})
+            if p == "/v1/slug":
+                s = re.sub(r"[^a-z0-9]+", "-", raw.decode().lower()).strip("-"); return self._send(200, {"slug": s})
+            if p == "/v1/wordcount":
+                t = raw.decode(); return self._send(200, {"words": len(t.split()), "chars": len(t), "lines": t.count("\n") + (1 if t and not t.endswith("\n") else 0)})
+        except Exception as e:
+            return self._send(400, {"error": str(e)})
+        self._send(404, {"error": "not found", "docs": "/"})
+
+if __name__ == "__main__":
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8311"))), H).serve_forever()
