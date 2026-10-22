@@ -24,11 +24,11 @@ INDEX = """<!doctype html><html><head><meta charset=utf-8><title>delta-1 utility
 <li><code>GET /x402/fetch?url=https://...</code> — $0.005 — fetch a public page, return title + readable text (HTML stripped). Handy for agents without a browser.</li>
 <li><code>POST /x402/csv2json</code>, <code>/x402/json2csv</code>, <code>/x402/hash</code>, <code>/x402/wordcount</code> — $0.001 each, no rate limit.</li>
 </ul>
-<p>Canonical host for x402: <code>http://176.124.255.233.nip.io:8311</code></p>
+<p>Canonical host: <code>https://utils.bigfloppy.net</code> (x402 resource URLs use this host)</p>
 <h2>Examples</h2>
-<pre>curl -X POST http://176.124.255.233:8311/v1/csv2json --data-binary $'a,b\\n1,2'
-curl -X POST "http://176.124.255.233:8311/v1/hash?algo=sha256" -d hello
-curl http://176.124.255.233:8311/v1/uuid?n=3</pre>
+<pre>curl -X POST https://utils.bigfloppy.net/v1/csv2json --data-binary $'a,b\\n1,2'
+curl -X POST "https://utils.bigfloppy.net/v1/hash?algo=sha256" -d hello
+curl https://utils.bigfloppy.net/v1/uuid?n=3</pre>
 <h2>Support / pay what it's worth</h2>
 <p>Free tier is limited to 60 req/min per IP. If this saves you time, tip in USDC on Base: <code>%s</code> or <a href="/pay">pay by card</a>. Bigger needs (custom endpoint, higher limits)? Email the creator via the dashboard; or send USDC with a memo.</p>
 </body></html>""" % WALLET
