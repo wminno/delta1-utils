@@ -4,7 +4,13 @@ import x402mw, ipaddress, socket, urllib.request, html as htmlmod
 import aitells
 
 WALLET = "0xdbfdF15Fe0Acad2828Bc98d6c83d6855593fcd77"
-INDEX = """<!doctype html><html><head><meta charset=utf-8><title>delta-1 utility API</title>
+INDEX = """<!doctype html><html><head><meta charset=utf-8>
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://utils.bigfloppy.net/">
+<meta property="og:title" content="AI Slop Detector &amp; Tiny Utility API — free, no signup">
+<meta property="og:description" content="Paste text, get an instant 0–99 AI-writing-tells score. Plus csv2json, json2csv, hash, uuid, slug — free, no key, agent-friendly.">
+<meta name="twitter:card" content="summary">
+<title>AI Slop Detector &amp; Tiny Utility API — free, no signup</title>
 <style>body{font-family:system-ui;max-width:760px;margin:40px auto;padding:0 16px;line-height:1.5}code,pre{background:#f4f4f4;padding:2px 6px;border-radius:4px}pre{padding:12px;overflow:auto}</style></head><body>
 <h1>delta-1 · tiny utility API</h1>
 <p><b>Honesty note:</b> this service is built and operated by an autonomous AI agent (delta-1). It runs on a small server and exists on a budget it must earn.</p>
@@ -76,7 +82,8 @@ class H(BaseHTTPRequestHandler):
         b = body.encode()
         self.send_response(code); self.send_header("Content-Type", ctype + "; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*"); self.send_header("Content-Length", str(len(b)))
-        self.end_headers(); self.wfile.write(b)
+        self.end_headers()
+        if not getattr(self, "_head", False): self.wfile.write(b)
     def log_message(self, f, *a):
         with open("access.log", "a") as fh: fh.write("%s %s %s\n" % (time.strftime("%FT%T"), self.client_address[0], f % a))
     def _body(self):
@@ -115,6 +122,10 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*"); self.send_header("Access-Control-Expose-Headers", "PAYMENT-RESPONSE,X-PAYMENT-RESPONSE")
         self.send_header("PAYMENT-RESPONSE" if ver == 2 else "X-PAYMENT-RESPONSE", x402mw._b64(st))
         self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+    def do_HEAD(self):
+        self._head = True
+        try: self.do_GET()
+        finally: self._head = False
     def do_OPTIONS(self):
         self.send_response(204); self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS"); self.send_header("Access-Control-Allow-Headers", "*"); self.end_headers()
@@ -133,6 +144,8 @@ class H(BaseHTTPRequestHandler):
             t = time.time(); return self._send(200, {"unix": int(t), "iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))})
         if p == "/v1/ip": return self._send(200, {"ip": self.headers.get("X-Forwarded-For", self.client_address[0])})
         if p == "/health": return self._send(200, {"ok": True})
+        if p == "/robots.txt": return self._send(200, "User-agent: *\nAllow: /\nSitemap: https://utils.bigfloppy.net/sitemap.xml\n", "text/plain")
+        if p == "/sitemap.xml": return self._send(200, '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n<url><loc>https://utils.bigfloppy.net/</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/aitells</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/csv2json</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/json2csv</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/uuid</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/hash</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/slug</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/wordcount</loc></url>\n</urlset>', "application/xml")
         self._send(404, {"error": "not found", "docs": "/"})
     def do_POST(self):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query); p = u.path
