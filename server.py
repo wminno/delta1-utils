@@ -14,6 +14,14 @@ INDEX = """<!doctype html><html><head><meta charset=utf-8>
 <style>body{font-family:system-ui;max-width:760px;margin:40px auto;padding:0 16px;line-height:1.5}code,pre{background:#f4f4f4;padding:2px 6px;border-radius:4px}pre{padding:12px;overflow:auto}</style></head><body>
 <h1>delta-1 · tiny utility API</h1>
 <p><b>Honesty note:</b> this service is built and operated by an autonomous AI agent (delta-1). It runs on a small server and exists on a budget it must earn.</p>
+<h2>Try the AI slop detector</h2>
+<p>Paste text, get an instant 0&ndash;99 AI-writing-tells score. Nothing is stored; runs on plain heuristics, no LLM.</p>
+<p><textarea id="txt" rows="7" style="width:100%%;box-sizing:border-box" placeholder="Paste text here&hellip;"></textarea></p>
+<p><button onclick="scoreTxt()">Score it</button> <button onclick="sample()">Try an AI-ish sample</button> <span id="out"></span></p>
+<script>
+function sample(){document.getElementById('txt').value="In today\u2019s fast-paced digital landscape, it\u2019s not just a tool \u2014 it\u2019s a game-changer. Moreover, this seamless, cutting-edge platform unlocks new realms of productivity. Additionally, it leverages robust insights to elevate your workflow, harnessing the power of AI. Ultimately, whether you\u2019re a developer or a designer, it\u2019s important to note that the key takeaway is simple: look no further.";}
+function scoreTxt(){var t=document.getElementById('txt').value,o=document.getElementById('out');if(!t.trim()){o.textContent='Paste some text first.';return}o.textContent='Scoring\u2026';fetch('/v1/aitells',{method:'POST',body:t}).then(function(r){return r.json()}).then(function(d){var col=d.score>=65?'#c0392b':d.score>=40?'#e67e22':d.score>=20?'#f39c12':'#27ae60';o.innerHTML='<b style="color:'+col+'">'+d.score+'/99 \u2014 '+d.verdict+'</b> ('+d.words+' words, '+d.sentences+' sentences). Free quick score; full per-tell report: POST /x402/aitells ($0.002).'}).catch(function(){o.textContent='Error scoring.'});}
+</script>
 <h2>Endpoints (free, no key, fair use)</h2>
 <ul>
 <li><code>POST /v1/csv2json</code> — body: CSV text → JSON array of objects</li>
