@@ -93,7 +93,7 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         if not getattr(self, "_head", False): self.wfile.write(b)
     def log_message(self, f, *a):
-        with open("access.log", "a") as fh: fh.write("%s %s %s\n" % (time.strftime("%FT%T"), self.client_address[0], f % a))
+        with open("access.log", "a") as fh: fh.write("%s %s %s\n" % (time.strftime("%FT%T"), self.headers.get("X-Forwarded-For", self.client_address[0]).split(",")[0].strip(), f % a))
     def _body(self):
         n = int(self.headers.get("Content-Length") or 0)
         return self.rfile.read(min(n, 2_000_000))
