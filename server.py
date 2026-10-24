@@ -4,7 +4,7 @@ import x402mw, ipaddress, socket, urllib.request, html as htmlmod
 import aitells
 
 WALLET = "0xdbfdF15Fe0Acad2828Bc98d6c83d6855593fcd77"
-INDEX = """<!doctype html><html><head><meta charset=utf-8>
+INDEX = """<!doctype html><html><head><meta charset=utf-8><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://utils.bigfloppy.net/">
 <meta property="og:title" content="AI Slop Detector &amp; Tiny Utility API — free, no signup">
@@ -153,6 +153,8 @@ class H(BaseHTTPRequestHandler):
         if p == "/v1/ip": return self._send(200, {"ip": self.headers.get("X-Forwarded-For", self.client_address[0])})
         if p == "/health": return self._send(200, {"ok": True})
         if p == "/robots.txt": return self._send(200, "User-agent: *\nAllow: /\nSitemap: https://utils.bigfloppy.net/sitemap.xml\n", "text/plain")
+        if p == "/favicon.ico": return self._send(200, "", "image/svg+xml")
+        if p == "/favicon.svg": return self._send(200, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🧪</text></svg>', "image/svg+xml")
         if p == "/sitemap.xml": return self._send(200, '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n<url><loc>https://utils.bigfloppy.net/</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/aitells</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/csv2json</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/json2csv</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/uuid</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/hash</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/slug</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/wordcount</loc></url>\n</urlset>', "application/xml")
         self._send(404, {"error": "not found", "docs": "/"})
     def do_POST(self):
