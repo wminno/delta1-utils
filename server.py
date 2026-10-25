@@ -2,6 +2,7 @@ import json, csv, io, re, hashlib, base64, uuid, time, urllib.parse, os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import x402mw, ipaddress, socket, urllib.request, html as htmlmod
 import aitells
+import mcp_api
 
 WALLET = "0xdbfdF15Fe0Acad2828Bc98d6c83d6855593fcd77"
 INDEX = """<!doctype html><html><head><meta charset=utf-8><link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -46,6 +47,7 @@ function scoreTxt(){var t=document.getElementById('txt').value,o=document.getEle
 <pre>curl -X POST https://utils.bigfloppy.net/v1/csv2json --data-binary $'a,b\\n1,2'
 curl -X POST "https://utils.bigfloppy.net/v1/hash?algo=sha256" -d hello
 curl https://utils.bigfloppy.net/v1/uuid?n=3</pre>
+<h2>Use it as an MCP server</h2><p>Same tools (AI-slop score, csv2json, json2csv, hash, slug, wordcount, uuid, time) over <b>streamable-http MCP</b>: point any MCP client at <code>https://utils.bigfloppy.net/mcp</code> — no key needed. Listed in the official MCP registry as <code>net.bigfloppy.utils/utils</code>.</p>
 <h2>Support / pay what it's worth</h2>
 <p>Free tier is limited to 60 req/min per IP. If this saves you time, tip in USDC on Base: <code>%s</code> or <a href="/pay">pay by card</a>. Bigger needs (custom endpoint, higher limits)? Email the creator via the dashboard; or send USDC with a memo.</p>
 </body></html>""" % WALLET
@@ -144,6 +146,7 @@ class H(BaseHTTPRequestHandler):
             try: link = open("paylink.txt").read().strip()
             except Exception: link = "/"
             self.send_response(302); self.send_header("Location", link); self.end_headers(); return
+        if p == "/mcp": return self._send(200, {"server": "net.bigfloppy.utils", "transport": "streamable-http", "usage": "POST JSON-RPC 2.0 to /mcp", "tools": [t["name"] for t in mcp_api.TOOLS]})
         if p in PAID: return self._paid(p, q, b"")
         if ratelimited(self.client_address[0]): return self._send(429, {"error": "rate limited (60/min). Paid, unlimited x402 endpoints: /x402/*"})
         if p == "/v1/uuid":
@@ -156,10 +159,22 @@ class H(BaseHTTPRequestHandler):
         if p == "/favicon.ico": return self._send(200, "", "image/svg+xml")
         if p == "/favicon.svg": return self._send(200, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🧪</text></svg>', "image/svg+xml")
         if p == "/sitemap.xml": return self._send(200, '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n<url><loc>https://utils.bigfloppy.net/</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/aitells</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/csv2json</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/json2csv</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/uuid</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/hash</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/slug</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/wordcount</loc></url>\n</urlset>', "application/xml")
+        if p.startswith("/.well-known/"):
+            import os as _os
+            fn = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), ".well-known", p.replace("/.well-known/", ""))
+            if _os.path.isfile(fn) and "/" not in p.replace("/.well-known/", ""):
+                return self._send(200, open(fn, "rb").read().decode(), "application/octet-stream")
         self._send(404, {"error": "not found", "docs": "/"})
     def do_POST(self):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query); p = u.path
         if p in PAID: return self._paid(p, q, self._body())
+        if p == "/mcp":
+            auth = self.headers.get("Authorization") or ""
+            key = self.headers.get("X-Api-Key") or (auth[7:] if auth.startswith("Bearer ") else None) or q.get("key", [None])[0]
+            code, obj = mcp_api.handle(self._body(), key=key, ip=self.client_address[0])
+            if code == 202:
+                self.send_response(202); self.send_header("Content-Length", "0"); self.end_headers(); return
+            return self._send(code, obj)
         if ratelimited(self.client_address[0]): return self._send(429, {"error": "rate limited (60/min)"})
         raw = self._body()
         try:
