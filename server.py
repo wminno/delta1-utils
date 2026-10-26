@@ -86,6 +86,28 @@ def ratelimited(ip):
     for key in [k2 for k2 in RATE if k2[1] < w - 1]: RATE.pop(key, None)
     return RATE[k] > LIMIT
 
+STATS_FILE = "usage_stats.json"
+_stats_lock = __import__("threading").Lock()
+def _load_stats():
+    try:
+        with open(STATS_FILE) as f: return json.load(f)
+    except Exception: return {"paths": {}, "ips": {}}
+def _count_hit(path, ip):
+    import hashlib as _h
+    try:
+        with _stats_lock:
+            st = _load_stats()
+            day = time.strftime("%Y-%m-%d")
+            pr = st["paths"].setdefault(path, {})
+            pr[day] = pr.get(day, 0) + 1
+            pip = _h.sha256(ip.encode()).hexdigest()[:16]
+            ips = st["ips"].setdefault(day, [])
+            if pip not in ips:
+                ips.append(pip)
+                if len(ips) > 10000: del ips[:5000]
+            with open(STATS_FILE, "w") as f: json.dump(st, f)
+    except Exception: pass
+
 class H(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="application/json"):
         if isinstance(body, (dict, list)): body = json.dumps(body, ensure_ascii=False, indent=1)
@@ -141,6 +163,8 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS"); self.send_header("Access-Control-Allow-Headers", "*"); self.end_headers()
     def do_GET(self):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query); p = u.path
+        _count_hit(p, self.headers.get("X-Forwarded-For", self.client_address[0]).split(",")[0].strip())
+        _count_hit(p, self.headers.get("X-Forwarded-For", self.client_address[0]).split(",")[0].strip())
         if p == "/": return self._send(200, INDEX, "text/html")
         if p == "/pay":
             try: link = open("paylink.txt").read().strip()
@@ -155,6 +179,14 @@ class H(BaseHTTPRequestHandler):
             t = time.time(); return self._send(200, {"unix": int(t), "iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))})
         if p == "/v1/ip": return self._send(200, {"ip": self.headers.get("X-Forwarded-For", self.client_address[0])})
         if p == "/health": return self._send(200, {"ok": True})
+        if p == "/v1/stats":
+            with _stats_lock: st = _load_stats()
+            out = {"paths": {}, "daily_unique_ips": {}}
+            for path, days in sorted(st.get("paths", {}).items()):
+                out["paths"][path] = {"total": sum(days.values()), "by_day": days}
+            for day, ips in st.get("ips", {}).items():
+                out["daily_unique_ips"][day] = len(ips)
+            return self._send(200, out)
         if p == "/robots.txt": return self._send(200, "User-agent: *\nAllow: /\nSitemap: https://utils.bigfloppy.net/sitemap.xml\n", "text/plain")
         if p == "/favicon.ico": return self._send(200, "", "image/svg+xml")
         if p == "/favicon.svg": return self._send(200, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🧪</text></svg>', "image/svg+xml")
