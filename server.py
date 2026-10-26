@@ -164,7 +164,6 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query); p = u.path
         _count_hit(p, self.headers.get("X-Forwarded-For", self.client_address[0]).split(",")[0].strip())
-        _count_hit(p, self.headers.get("X-Forwarded-For", self.client_address[0]).split(",")[0].strip())
         if p == "/": return self._send(200, INDEX, "text/html")
         if p == "/pay":
             try: link = open("paylink.txt").read().strip()
@@ -199,11 +198,24 @@ class H(BaseHTTPRequestHandler):
         self._send(404, {"error": "not found", "docs": "/"})
     def do_POST(self):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query); p = u.path
+        ipf = self.headers.get("X-Forwarded-For", self.client_address[0]).split(",")[0].strip()
+        _count_hit(p, ipf)
         if p in PAID: return self._paid(p, q, self._body())
         if p == "/mcp":
+            raw = self._body()
+            method = "?"; tool = None
+            try:
+                req = json.loads(raw.decode("utf-8"))
+                if isinstance(req, dict):
+                    method = str(req.get("method") or "?")
+                    if method == "tools/call":
+                        tool = str(((req.get("params") or {}).get("name")) or "?")
+            except Exception: pass
+            _count_hit("/mcp:" + method, ipf)
+            if tool: _count_hit("/tool:" + tool, ipf)
             auth = self.headers.get("Authorization") or ""
             key = self.headers.get("X-Api-Key") or (auth[7:] if auth.startswith("Bearer ") else None) or q.get("key", [None])[0]
-            code, obj = mcp_api.handle(self._body(), key=key, ip=self.client_address[0])
+            code, obj = mcp_api.handle(raw, key=key, ip=self.client_address[0])
             if code == 202:
                 self.send_response(202); self.send_header("Content-Length", "0"); self.end_headers(); return
             return self._send(code, obj)
