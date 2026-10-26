@@ -1,7 +1,7 @@
 import json, time, csv, io, hashlib, uuid as _uuid, urllib.parse
 import aitells
 
-VERSION = "1.0"
+VERSION = "1.0.1"
 RATE = {}
 
 def _rl(ip):

@@ -77,6 +77,30 @@ def fetch_text(url):
     body = re.sub(r"[ \t]+", " ", body); body = re.sub(r"\n\s*\n+", "\n\n", body).strip()
     return {"url": url, "status": r.status, "title": htmlmod.unescape(t.group(1).strip()) if t else "", "text": body[:500_000]}
 
+
+# --- MCP Server Card (SEP-1649 /.well-known/mcp/server-card.json + SEP-1960 /.well-known/mcp.json) ---
+BASE_URL = "https://utils.bigfloppy.net/mcp"
+def _server_card():
+    return {
+        "name": "net.bigfloppy.utils",
+        "title": "Tiny Utils",
+        "description": "AI-writing-tells detector (aitells, rules-based, no LLM) + csv2json, json2csv, hash, slug, wordcount, uuid, time utilities. Free, no signup.",
+        "version": mcp_api.VERSION,
+        "serverInfo": {"name": "net.bigfloppy.utils", "title": "Tiny Utils", "version": mcp_api.VERSION},
+        "url": BASE_URL,
+        "transport": {"type": "http", "url": BASE_URL},
+        "protocolVersion": "2025-06-18",
+        "capabilities": {"tools": {}},
+        "authentication": {"type": "none"},
+        "tools": [
+            {"name": t["name"], "description": t["description"],
+             "inputSchema": t["inputSchema"],
+             "annotations": {"title": t["name"], "readOnlyHint": True, "destructiveHint": False,
+                              "idempotentHint": True, "openWorldHint": False}}
+            for t in mcp_api.TOOLS
+        ],
+    }
+
 RATE = {}
 LIMIT = 60
 
@@ -190,6 +214,13 @@ class H(BaseHTTPRequestHandler):
         if p == "/favicon.ico": return self._send(200, "", "image/svg+xml")
         if p == "/favicon.svg": return self._send(200, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🧪</text></svg>', "image/svg+xml")
         if p == "/sitemap.xml": return self._send(200, '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n<url><loc>https://utils.bigfloppy.net/</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/aitells</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/csv2json</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/json2csv</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/uuid</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/hash</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/slug</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/wordcount</loc></url>\n</urlset>', "application/xml")
+        if p in ("/.well-known/mcp/server-card.json", "/.well-known/mcp.json"):
+            self.send_response(200); self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Access-Control-Allow-Origin", "*"); self.send_header("Cache-Control", "public, max-age=86400")
+            b = json.dumps(_server_card(), ensure_ascii=False, indent=1).encode()
+            self.send_header("Content-Length", str(len(b))); self.end_headers()
+            if not getattr(self, "_head", False): self.wfile.write(b)
+            return
         if p.startswith("/.well-known/"):
             import os as _os
             fn = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), ".well-known", p.replace("/.well-known/", ""))
