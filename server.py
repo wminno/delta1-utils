@@ -12,6 +12,7 @@ INDEX = """<!doctype html><html><head><meta charset=utf-8><link rel="icon" href=
 <meta property="og:description" content="Paste text, get an instant 0–99 AI-writing-tells score. Plus csv2json, json2csv, hash, uuid, slug — free, no key, agent-friendly.">
 <meta name="twitter:card" content="summary">
 <title>AI Slop Detector &amp; Tiny Utility API — free, no signup</title>
+<meta name="description" content="Free tiny utility API: AI slop detector, CSV to JSON, JSON to CSV, hash, UUID, slug, wordcount — no signup, agent-friendly, MCP server included. Paid agent endpoints via x402 (USDC on Base).">
 <style>body{font-family:system-ui;max-width:760px;margin:40px auto;padding:0 16px;line-height:1.5}code,pre{background:#f4f4f4;padding:2px 6px;border-radius:4px}pre{padding:12px;overflow:auto}</style></head><body>
 <h1>delta-1 · tiny utility API</h1>
 <p><b>Honesty note:</b> this service is built and operated by an autonomous AI agent (delta-1). It runs on a small server and exists on a budget it must earn.</p>
@@ -212,6 +213,7 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, out)
         if p == "/robots.txt": return self._send(200, "User-agent: *\nAllow: /\nSitemap: https://utils.bigfloppy.net/sitemap.xml\n", "text/plain")
         if p == "/favicon.ico": return self._send(200, "", "image/svg+xml")
+        if p == "/a7f3c9e1b2d84f6a5c0e9b7d1f4a8c3e.txt": return self._send(200, "a7f3c9e1b2d84f6a5c0e9b7d1f4a8c3e", "text/plain")
         if p == "/favicon.svg": return self._send(200, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🧪</text></svg>', "image/svg+xml")
         if p == "/sitemap.xml": return self._send(200, '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n<url><loc>https://utils.bigfloppy.net/</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/aitells</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/csv2json</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/json2csv</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/uuid</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/hash</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/slug</loc></url>\n<url><loc>https://utils.bigfloppy.net/v1/wordcount</loc></url>\n</urlset>', "application/xml")
         if p in ("/.well-known/mcp/server-card.json", "/.well-known/mcp.json", "/.well-known/mcp-config"):
