@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import x402mw, ipaddress, socket, urllib.request, html as htmlmod
 import aitells
 import mcp_api
+import mcpscan
 
 WALLET = "0xdbfdF15Fe0Acad2828Bc98d6c83d6855593fcd77"
 INDEX = """<!doctype html><html><head><meta charset=utf-8><link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -41,6 +42,7 @@ function scoreTxt(){var t=document.getElementById('txt').value,o=document.getEle
 <ul>
 <li><code>GET /x402/fetch?url=https://...</code> — $0.005 — fetch a public page, return title + readable text (HTML stripped). Handy for agents without a browser.</li>
 <li><code>POST /x402/csv2json</code>, <code>/x402/json2csv</code>, <code>/x402/hash</code>, <code>/x402/wordcount</code> — $0.001 each, no rate limit.</li>
+<li><code>GET /x402/mcpscan?url=https://host/mcp</code> or <code>?name=registry/name</code> — $2 — <b>MCP Server Trust Scan</b>: deterministic audit of any MCP server (SEP-1649 card, handshake, tools, auth posture, hygiene) with score 0-100, grade, per-check report and a shareable public page. Free published reports: <a href="/scan">/scan</a>; free score-only: <code>/v1/mcpscan?url=...</code>.</li>
 <li><code>POST /x402/aitells</code> — $0.002 — full AI-writing-tells report: every matched tell with example sentences, style stats (em-dash rate, rule-of-three density, sentence-length uniformity). Deterministic, rules-based, no LLM.</li>
 </ul>
 <p>Canonical host: <code>https://utils.bigfloppy.net</code> (x402 resource URLs use this host)</p>
@@ -60,6 +62,7 @@ PAID = {
  "/x402/hash":    ("sha256/md5/sha1/sha512 of request body (?algo=)", 1000, "POST", "text"),
  "/x402/wordcount":("words/chars/lines of text body", 1000, "POST", "text"),
 "/x402/aitells":("AI-writing-tells report: score 0-99, matched tells with example sentences, style stats (em-dash rate, rule-of-three, sentence-length uniformity). Rules-based, deterministic, no LLM. Body = text to check.", 2000, "POST", "text"),
+"/x402/mcpscan":("MCP Server Trust Scan: audit any public MCP server URL or registry name — SEP-1649 card + fields, initialize/tools-list handshake, HEAD support, auth posture, hygiene probes. Deterministic score 0-100 + grade + per-check report + shareable public report page. ?url=https://host/mcp or ?name=registry/name ($2)", 2000000, "GET", None),
 }
 def _public(url):
     h = urllib.parse.urlparse(url).hostname or ""
@@ -164,6 +167,16 @@ class H(BaseHTTPRequestHandler):
                 keys = []; [keys.append(k) for r in data for k in r if k not in keys]
                 o = io.StringIO(); w = csv.DictWriter(o, fieldnames=keys); w.writeheader(); w.writerows(data); out = {"csv": o.getvalue()}
             elif p == "/x402/aitells": out = aitells.analyze(raw.decode("utf-8", "replace"))
+            elif p == "/x402/mcpscan":
+                _u = q.get("url", [None])[0]; _n = q.get("name", [None])[0]
+                if not _u and _n:
+                    try: _u = mcpscan.resolve_registry(_n)
+                    except Exception: _u = None
+                if not _u: out = {"error": "provide ?url=https://host/mcp or ?name=registry/name"}
+                else:
+                    out = mcpscan.scan(_u, deep=True)
+                    if "error" not in out:
+                        out["report_url"] = "https://utils.bigfloppy.net/scan/" + mcpscan.save_report(out)
             elif p == "/x402/hash":
                 algo = q.get("algo", ["sha256"])[0]; algo = algo if algo in ("md5", "sha1", "sha256", "sha512") else "sha256"
                 out = {"algo": algo, "hex": hashlib.new(algo, raw).hexdigest()}
@@ -227,7 +240,14 @@ class H(BaseHTTPRequestHandler):
             import os as _os
             fn = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), ".well-known", p.replace("/.well-known/", ""))
             if _os.path.isfile(fn) and "/" not in p.replace("/.well-known/", ""):
+
                 return self._send(200, open(fn, "rb").read().decode(), "application/octet-stream")
+
+        if p == "/scan":
+            return self._send(200, mcpscan.page_html(mcpscan.list_reports(), index_mode=True), "text/html")
+        if p.startswith("/scan/"):
+            r = mcpscan.load_report(p[6:].strip("/"))
+            if r: return self._send(200, mcpscan.page_html(r), "text/html")
         self._send(404, {"error": "not found", "docs": "/"})
     def do_POST(self):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query); p = u.path
@@ -272,6 +292,15 @@ class H(BaseHTTPRequestHandler):
             if p == "/v1/aitells":
                 out = aitells.analyze(raw.decode("utf-8", "replace"))
                 return self._send(200, {k: out[k] for k in ("score", "verdict", "words", "sentences")})
+            if p == "/v1/mcpscan":
+                u = q.get("url", [None])[0]
+                if not u and q.get("name", [None])[0]:
+                    try: u = mcpscan.resolve_registry(q["name"][0])
+                    except Exception: u = None
+                if not u: return self._send(400, {"error": "?url=https://host/mcp or ?name=registry/name required", "paid_full": "/x402/mcpscan"})
+                r = mcpscan.scan(u, deep=False)
+                if "error" in r: return self._send(400, r)
+                return self._send(200, {k: r[k] for k in ("url", "score", "grade", "verdict")} | {"full_report": "GET /x402/mcpscan?url=... ($0.002, per-check detail)"})
             if p == "/v1/wordcount":
                 t = raw.decode(); return self._send(200, {"words": len(t.split()), "chars": len(t), "lines": t.count("\n") + (1 if t and not t.endswith("\n") else 0)})
         except Exception as e:
