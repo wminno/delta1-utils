@@ -262,3 +262,39 @@ Failing hygiene details are withheld publicly (responsible disclosure).</p></bod
         htmlmod.escape(report.get("url", "")), report.get("score", "?"), report.get("grade", ""),
         col, htmlmod.escape(report.get("url", "")), report.get("score", "?"), report.get("grade", ""),
         htmlmod.escape(report.get("verdict", "")), rows, report.get("scanned_at", ""))
+
+# ---------- free-report seeding for popular servers ----------
+import threading as _th
+SEED_URLS = [
+    "https://mcp.context7.com/mcp", "https://mcp.deepwiki.com/mcp", "https://mcp.exa.ai/mcp",
+    "https://mcp.notion.com/mcp", "https://api.githubcopilot.com/mcp/", "https://mcp.stripe.com",
+    "https://mcp.atlassian.com/mcp", "https://mcp.sentry.dev/mcp", "https://mcp.zapier.com/api/mcp/mcp",
+    "https://mcp.linear.app/mcp", "https://mcp.snag.ac/mcp", "https://tandem.ac/mcp",
+    "https://api.inference.sh/mcp", "https://apexai.academy/mcp", "https://mcp.datadubai.ae/mcp",
+    "https://easyvoice.ae/api/mcp", "https://mcp.goji.agency/mcp", "https://justidea.agency/mcp",
+    "https://mcp.projectory.ae/mcp", "https://propick.ae/mcp", "https://mcp.getle.ad/mcp",
+    "https://app.inside.ad/api/mcp", "https://www.beachclubs.ae/mcp", "https://prices.brainy.ae/mcp",
+    "https://genosys.ae/mcp", "https://plantguide.ae/mcp", "https://events.aero/mcp/events",
+    "https://api.ugc.africa/mcp", "https://www.hood.ag/api/mcp", "https://mcp.grovisor.ae/",
+]
+_seeding = False
+def seed_worker(min_keep=20):
+    global _seeding
+    seen = set()
+    for u in SEED_URLS:
+        if len(list_reports()) >= min_keep: break
+        slug = _slugify(u)
+        if slug in seen or load_report(slug): continue
+        seen.add(slug)
+        try:
+            r = scan(u, deep=True)
+            if "error" not in r and r.get("score") is not None:
+                save_report(r)
+        except Exception:
+            pass
+    _seeding = False
+def maybe_seed(min_keep=20):
+    global _seeding
+    if _seeding or len(list_reports()) >= min_keep: return
+    _seeding = True
+    _th.Thread(target=seed_worker, args=(min_keep,), daemon=True).start()
