@@ -1,7 +1,8 @@
 import json, time, csv, io, hashlib, uuid as _uuid, urllib.parse
 import aitells
+import mcpscan
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 RATE = {}
 
 def _rl(ip):
@@ -22,6 +23,7 @@ TOOLS = [
  {"name": "slug", "description": "Turn text into a URL slug.", "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}},
  {"name": "wordcount", "description": "Count words, characters and lines of text.", "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}},
  {"name": "uuid", "description": "Generate random UUIDv4s (1-100, default 5).", "inputSchema": {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 100}}, "required": []}},
+ {"name": "trust_scan", "description": "MCP Server Trust Scan: audit any public MCP server (card fields, handshake, tools/list, HEAD, auth posture, hygiene leaks). Deterministic score 0-100 + grade + per-check report. Input: url of the server or its /mcp endpoint.", "inputSchema": {"type": "object", "properties": {"url": {"type": "string", "description": "https URL of the MCP server or its /mcp endpoint"}, "deep": {"type": "boolean", "description": "include hygiene probes (default true)"}}, "required": ["url"]}},
  {"name": "time", "description": "Current unix + ISO UTC time.", "inputSchema": {"type": "object", "properties": {}, "required": []}},
 ]
 
@@ -55,6 +57,12 @@ def _call(name, a):
     if name == "uuid":
         n = max(1, min(100, int(a.get("n", 5) or 5)))
         return {"content": [{"type": "text", "text": json.dumps({"uuids": [str(_uuid.uuid4()) for _ in range(n)]})}]}
+    if name == "trust_scan":
+        try:
+            out = mcpscan.scan(a.get("url", ""), deep=bool(a.get("deep", True)))
+        except Exception as e:
+            out = {"error": str(e)}
+        return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
     if name == "time":
         t = time.time()
         return {"content": [{"type": "text", "text": json.dumps({"unix": int(t), "iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))})}]}
