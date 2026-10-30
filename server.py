@@ -215,6 +215,18 @@ class H(BaseHTTPRequestHandler):
         if p == "/v1/time":
             t = time.time(); return self._send(200, {"unix": int(t), "iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))})
         if p == "/v1/ip": return self._send(200, {"ip": self.headers.get("X-Forwarded-For", self.client_address[0])})
+        if p == "/v1/mcpscan":
+            _u = q.get("url", [None])[0]; _n = q.get("name", [None])[0]
+            if not _u and _n:
+                try: _u = mcpscan.resolve_registry(_n)
+                except Exception: _u = None
+            if not _u: return self._send(400, {"error": "?url=https://host/mcp or ?name=registry/name required", "paid_full": "/x402/mcpscan"})
+            try:
+                r = mcpscan.scan(_u, deep=False)
+            except Exception as e:
+                return self._send(504, {"error": "scan failed: " + str(e)[:200]})
+            if "error" in r: return self._send(400, r)
+            return self._send(200, {k: r[k] for k in ("url", "score", "grade", "verdict")} | {"full_report": "GET /x402/mcpscan?url=... ($0.002, per-check detail)"})
         if p == "/health": return self._send(200, {"ok": True})
         if p == "/v1/stats":
             with _stats_lock: st = _load_stats()
